@@ -70,7 +70,7 @@ with title_col:
     st.markdown(
         '<div class="app-header">'
         '<span class="app-title">Phishing Email Detector</span>'
-        '<span class="app-badge">AI-Powered</span>'
+        # '<span class="app-badge">AI-Powered</span>'
         '</div>',
         unsafe_allow_html=True
     )

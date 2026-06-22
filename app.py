@@ -143,6 +143,8 @@ with col_input:
                     st.markdown(f'<div class="meta-row"><span class="meta-key">Date</span><span class="meta-val">{metadata["date"]}</span></div>', unsafe_allow_html=True)
                 if metadata['subject']:
                     st.markdown(f'<div class="meta-row"><span class="meta-key">Subject</span><span class="meta-val">{metadata["subject"]}</span></div>', unsafe_allow_html=True)
+                if metadata.get('auth_results'):
+                    st.markdown(f'<div class="meta-row"><span class="meta-key">Authentication</span><span class="meta-val">{metadata["auth_results"]}</span></div>', unsafe_allow_html=True)
 
             with st.expander("Preview extracted text"):
                 st.text(email_text)
@@ -198,7 +200,7 @@ with col_output:
             clean_text = clean_email(email_text)
             is_eml = (input_method == "Upload .eml file") and (uploaded is not None) and (metadata is not None)
 
-            verdict, phishing_prob, confidence, display_confidence, prediction = predict(
+            verdict, phishing_prob, confidence, prediction = predict(
                 clean_text, model, tfidf, strict=is_eml
             )
 
@@ -209,7 +211,6 @@ with col_output:
                 if is_trusted_sender:
                     verdict = "LEGITIMATE"
                     phishing_prob = 0.23
-                    display_confidence = "Verified Official Sender (Authenticated)"
                 else:
                     if phishing_prob > 0.50:
                         phishing_prob -= 0.40
@@ -243,7 +244,7 @@ with col_output:
             status_text = "No threat found"
         else:
             card_class = "verdict-uncertain"
-            status_text = "Inconclusive"
+            status_text = "Uncertain result"
 
         st.markdown(f"""
         <div class="verdict-card {card_class}">

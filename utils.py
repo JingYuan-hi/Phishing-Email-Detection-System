@@ -261,7 +261,6 @@ def predict(clean_text, model, tfidf,strict=False):
     vec           = tfidf.transform([clean_text])
     proba         = model.predict_proba(vec)[0]
     phishing_prob = proba[1]
-    legit_prob    = proba[0]
     confidence    = max(proba) * 100
 
     high = 0.70 if strict else 0.80
@@ -274,20 +273,9 @@ def predict(clean_text, model, tfidf,strict=False):
     else:
         verdict = "UNCERTAIN"
 
-    # ── Confidence label ──
-    if verdict == "PHISHING":
-        display_confidence = f"{phishing_prob * 100:.1f}% likely phishing"
-    elif verdict == "LEGITIMATE":
-        display_confidence = f"{legit_prob * 100:.1f}% likely legitimate"
-    else:
-        display_confidence = (
-            f"{phishing_prob * 100:.1f}% phishing / "
-            f"{legit_prob * 100:.1f}% legitimate"
-        )
-
     prediction = 1 if phishing_prob >= 0.50 else 0
 
-    return verdict, phishing_prob, confidence, display_confidence, prediction
+    return verdict, phishing_prob, confidence, prediction
 
 
 def get_explanation(clean_text, prediction, model, tfidf):
@@ -595,10 +583,7 @@ def highlight_text(original_text, suspicious_words):
     )
 
     safe_text = pattern.sub(
-        lambda m: (
-            f'<mark style="background-color:#FF4B4B;color:white;'
-            f'padding:0 3px;border-radius:3px;">{m.group()}</mark>'
-        ),
+        lambda m: f'<mark class="highlight-suspicious">{m.group()}</mark>',
         safe_text
     )
 

@@ -144,7 +144,20 @@ with col_input:
                 if metadata['subject']:
                     st.markdown(f'<div class="meta-row"><span class="meta-key">Subject</span><span class="meta-val">{metadata["subject"]}</span></div>', unsafe_allow_html=True)
                 if metadata.get('auth_results'):
-                    st.markdown(f'<div class="meta-row"><span class="meta-key">Authentication</span><span class="meta-val">{metadata["auth_results"]}</span></div>', unsafe_allow_html=True)
+                    raw_auth = metadata["auth_results"].lower()
+                    auth_badges = []
+                    
+                    # Search the messy string and extract only the pass/fail status
+                    if "spf=pass" in raw_auth: auth_badges.append("SPF: Pass")
+                    elif "spf=fail" in raw_auth: auth_badges.append("SPF: Fail")
+                    
+                    if "dkim=pass" in raw_auth: auth_badges.append("DKIM: Pass")
+                    elif "dkim=fail" in raw_auth: auth_badges.append("DKIM: Fail")
+                    
+                    # Join them together nicely, or show a default message
+                    clean_auth = " & ".join(auth_badges) if auth_badges else "None detected"
+                    
+                    st.markdown(f'<div class="meta-row"><span class="meta-key">Auth Checks</span><span class="meta-val">{clean_auth}</span></div>', unsafe_allow_html=True)
 
             with st.expander("Preview extracted text"):
                 st.text(email_text)

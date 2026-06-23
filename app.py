@@ -1,7 +1,7 @@
 import streamlit as st
 from utils import (
     load_model, parse_eml,
-    clean_email, extract_urls,
+    clean_email, extract_urls, parse_pdf,
     predict, get_explanation,
     check_trusted_sender, analyse_metadata,
     generate_plain_explanation, highlight_text,
@@ -46,7 +46,7 @@ st.markdown("""
 # ── Guide dialog ──────────────────────────────────────────────────────────────
 @st.dialog("How to export your email as .eml", width="large")
 def show_guide():
-    tab1, tab2 = st.tabs(["Gmail", "Outlook"])
+    tab1, tab2, tab3 = st.tabs(["Gmail", "Outlook", "PDF"])
     with tab1:
         st.markdown("""
         1. Open the email in Gmail
@@ -62,6 +62,16 @@ def show_guide():
            or drag the email to your desktop to get a `.eml` file
         4. Upload the file here
         """)
+    with tab3:
+        st.markdown("""
+        1. Open the email in any client
+        2. Go to **File → Print** (or press Ctrl+P / Cmd+P)
+        3. Choose **"Save as PDF"** as the printer
+        4. Upload the saved `.pdf` file here
+ 
+        > **Note:** PDF upload does not include email headers (sender, SPF/DKIM checks).
+        > For best accuracy, use `.eml` format when possible.
+        """)
 
 # ── Header ────────────────────────────────────────────────────────────────────
 title_col, guide_col = st.columns([5, 1])
@@ -70,7 +80,6 @@ with title_col:
     st.markdown(
         '<div class="app-header">'
         '<span class="app-title">Phishing Email Detector</span>'
-        # '<span class="app-badge">AI-Powered</span>'
         '</div>',
         unsafe_allow_html=True
     )
@@ -105,6 +114,7 @@ with col_input:
     uploaded     = None
     sender_hint  = ""
     is_eml       = False
+    is_pdf       = False
 
     if input_method == "Paste text":
         display_text = st.text_area(
@@ -124,43 +134,70 @@ with col_input:
 
     else:
         uploaded = st.file_uploader(
-            "Upload .eml file",
-            type=['eml'],
+            "Upload .eml or .pdf file",
+            type=['eml', 'pdf'],
             key=f"eml_upload_{st.session_state.clear_count}",
             label_visibility="collapsed"
         )
+
         if uploaded:
-            subject, body, email_text, metadata = parse_eml(uploaded)
-            display_text = email_text
-            st.success(f"Loaded: {uploaded.name}")
-
-            with st.expander("Metadata"):
-                if metadata['sender']:
-                    st.markdown(f'<div class="meta-row"><span class="meta-key">From</span><span class="meta-val">{metadata["sender"]}</span></div>', unsafe_allow_html=True)
-                if metadata['reply_to']:
-                    st.markdown(f'<div class="meta-row"><span class="meta-key">Reply-To</span><span class="meta-val">{metadata["reply_to"]}</span></div>', unsafe_allow_html=True)
-                if metadata['date']:
-                    st.markdown(f'<div class="meta-row"><span class="meta-key">Date</span><span class="meta-val">{metadata["date"]}</span></div>', unsafe_allow_html=True)
-                if metadata['subject']:
-                    st.markdown(f'<div class="meta-row"><span class="meta-key">Subject</span><span class="meta-val">{metadata["subject"]}</span></div>', unsafe_allow_html=True)
-                if metadata.get('auth_results'):
-                    raw_auth = metadata["auth_results"].lower()
-                    auth_badges = []
-                    
-                    # Search the messy string and extract only the pass/fail status
-                    if "spf=pass" in raw_auth: auth_badges.append("SPF: Pass")
-                    elif "spf=fail" in raw_auth: auth_badges.append("SPF: Fail")
-                    
-                    if "dkim=pass" in raw_auth: auth_badges.append("DKIM: Pass")
-                    elif "dkim=fail" in raw_auth: auth_badges.append("DKIM: Fail")
-                    
-                    # Join them together nicely, or show a default message
-                    clean_auth = " & ".join(auth_badges) if auth_badges else "None detected"
-                    
-                    st.markdown(f'<div class="meta-row"><span class="meta-key">Auth Checks</span><span class="meta-val">{clean_auth}</span></div>', unsafe_allow_html=True)
-
-            with st.expander("Preview extracted text"):
-                st.text(email_text)
+            file_ext = uploaded.name.rsplit('.', 1)[-1].lower()
+ 
+            # ── PDF branch ────────────────────────────────────────────────────
+            if file_ext == 'pdf':
+                is_pdf = True
+                try:
+                    email_text = parse_pdf(uploaded)
+                    display_text = email_text
+                    st.success(f"Loaded: {uploaded.name}")
+ 
+                    st.info(
+                        "📄 **PDF uploaded** — Header metadata (sender, SPF/DKIM) "
+                        "is not available for PDF files. Scan is based on text content only.",
+                        icon=None
+                    )
+ 
+                    with st.expander("Preview extracted text"):
+                        st.text(email_text if email_text else "(No text could be extracted)")
+ 
+                except Exception as e:
+                    st.error(f"Failed to read PDF: {e}")
+ 
+            # ── EML branch ────────────────────────────────────────────────────
+            else:
+                is_eml = True
+                try:
+                    subject, body, email_text, metadata = parse_eml(uploaded)
+                    display_text = email_text
+                    st.success(f"Loaded: {uploaded.name}")
+ 
+                    with st.expander("Metadata"):
+                        if metadata['sender']:
+                            st.markdown(f'<div class="meta-row"><span class="meta-key">From</span><span class="meta-val">{metadata["sender"]}</span></div>', unsafe_allow_html=True)
+                        if metadata['reply_to']:
+                            st.markdown(f'<div class="meta-row"><span class="meta-key">Reply-To</span><span class="meta-val">{metadata["reply_to"]}</span></div>', unsafe_allow_html=True)
+                        if metadata['date']:
+                            st.markdown(f'<div class="meta-row"><span class="meta-key">Date</span><span class="meta-val">{metadata["date"]}</span></div>', unsafe_allow_html=True)
+                        if metadata['subject']:
+                            st.markdown(f'<div class="meta-row"><span class="meta-key">Subject</span><span class="meta-val">{metadata["subject"]}</span></div>', unsafe_allow_html=True)
+                        if metadata.get('auth_results'):
+                            raw_auth = metadata["auth_results"].lower()
+                            auth_badges = []
+ 
+                            if "spf=pass" in raw_auth:   auth_badges.append("SPF: Pass")
+                            elif "spf=fail" in raw_auth: auth_badges.append("SPF: Fail")
+ 
+                            if "dkim=pass" in raw_auth:   auth_badges.append("DKIM: Pass")
+                            elif "dkim=fail" in raw_auth: auth_badges.append("DKIM: Fail")
+ 
+                            clean_auth = " & ".join(auth_badges) if auth_badges else "None detected"
+                            st.markdown(f'<div class="meta-row"><span class="meta-key">Auth Checks</span><span class="meta-val">{clean_auth}</span></div>', unsafe_allow_html=True)
+ 
+                    with st.expander("Preview extracted text"):
+                        st.text(email_text)
+ 
+                except Exception as e:
+                    st.error(f"Failed to read .eml file: {e}")
 
     btn_col1, btn_col2 = st.columns([1, 1])
     with btn_col1:
@@ -202,7 +239,7 @@ with col_output:
             is_authenticated  = False
             trusted_domain    = ''
 
-            if input_method == "Upload .eml file" and uploaded and metadata:
+            if is_eml and uploaded and metadata:
                 metadata_warnings = analyse_metadata(metadata)
                 is_trusted_sender, trusted_domain = check_trusted_sender(
                     metadata.get('sender', '')
@@ -211,7 +248,6 @@ with col_output:
                 is_trusted_sender, trusted_domain = check_trusted_sender(sender_hint.strip())
 
             clean_text = clean_email(email_text)
-            is_eml = (input_method == "Upload .eml file") and (uploaded is not None) and (metadata is not None)
 
             verdict, phishing_prob, confidence, prediction = predict(
                 clean_text, model, tfidf, strict=is_eml

@@ -4,6 +4,7 @@ import html as html_lib
 import numpy as np
 import joblib
 import streamlit as st
+import PyPDF2
 from email import policy
 
 
@@ -54,9 +55,6 @@ def clean_email(text):
     text = re.sub(r'[^a-z\s]',       ' ',            text)
     text = re.sub(r'\s+',            ' ',            text).strip()
     return text
-
-
-
 
 def strip_html(html_text):
     """
@@ -115,13 +113,6 @@ def parse_eml(uploaded_file):
     sender   = msg.get('from',     '') or ''
     reply_to = msg.get('reply-to', '') or ''
     date     = msg.get('date',     '') or ''
-    # ── new fields ──────────────────
-    return_path =  msg.get('return-path',       '') or ''
-    x_mailer =     msg.get('x-mailer',          '') or ''
-    message_id =   msg.get('message-id',        '') or ''
-    auth_results = msg.get('authentication-results', '') or ''
-
-
     plain_body = ''
     html_body  = ''
 
@@ -172,6 +163,18 @@ def parse_eml(uploaded_file):
 
     return subject, body, combined_text, metadata
 
+def parse_pdf(uploaded_file):
+    """
+    Extract plain text from a PDF file.
+    Returns the raw text to be processed by the ML model.
+    """
+    reader = PyPDF2.PdfReader(uploaded_file)
+    text = ""
+    for page in reader.pages:
+        extracted = page.extract_text()
+        if extracted:
+            text += extracted + " "
+    return text.strip()
 
 def extract_urls(text):
     """Extract raw URLs from original email text before cleaning."""

@@ -3,3 +3,4 @@ scikit-learn==1.7.2
 joblib
 matplotlib
 seaborn
+PyPDF2==3.0.1

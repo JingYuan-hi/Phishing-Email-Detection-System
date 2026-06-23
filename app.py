@@ -147,15 +147,25 @@ with col_input:
             if file_ext == 'pdf':
                 is_pdf = True
                 try:
-                    email_text = parse_pdf(uploaded)
+                    email_text, metadata = parse_pdf(uploaded)
                     display_text = email_text
                     st.success(f"Loaded: {uploaded.name}")
  
-                    st.info(
-                        "📄 **PDF uploaded** — Header metadata (sender, SPF/DKIM) "
-                        "is not available for PDF files. Scan is based on text content only.",
-                        icon=None
-                    )
+                    # Show whatever metadata we could extract from the PDF text
+                    has_meta = any([metadata.get('sender'), metadata.get('date'), metadata.get('subject')])
+                    if has_meta:
+                        with st.expander("Extracted metadata"):
+                            if metadata.get('sender'):
+                                st.markdown(f'<div class="meta-row"><span class="meta-key">From</span><span class="meta-val">{metadata["sender"]}</span></div>', unsafe_allow_html=True)
+                            if metadata.get('reply_to'):
+                                st.markdown(f'<div class="meta-row"><span class="meta-key">Reply-To</span><span class="meta-val">{metadata["reply_to"]}</span></div>', unsafe_allow_html=True)
+                            if metadata.get('date'):
+                                st.markdown(f'<div class="meta-row"><span class="meta-key">Date</span><span class="meta-val">{metadata["date"]}</span></div>', unsafe_allow_html=True)
+                            if metadata.get('subject'):
+                                st.markdown(f'<div class="meta-row"><span class="meta-key">Subject</span><span class="meta-val">{metadata["subject"]}</span></div>', unsafe_allow_html=True)
+                            st.caption("⚠️ SPF/DKIM authentication not available for PDF files.")
+                    else:
+                        st.info("📄 No header metadata found in PDF. Scan based on text content only.")
  
                     with st.expander("Preview extracted text"):
                         st.text(email_text if email_text else "(No text could be extracted)")
@@ -239,18 +249,19 @@ with col_output:
             is_authenticated  = False
             trusted_domain    = ''
 
-            if is_eml and uploaded and metadata:
+            if (is_eml or is_pdf) and uploaded and metadata:
                 metadata_warnings = analyse_metadata(metadata)
                 is_trusted_sender, trusted_domain = check_trusted_sender(
                     metadata.get('sender', '')
                 )
             elif input_method == "Paste text" and sender_hint and sender_hint.strip():
                 is_trusted_sender, trusted_domain = check_trusted_sender(sender_hint.strip())
-
+ 
             clean_text = clean_email(email_text)
 
+            pdf_has_sender = is_pdf and bool(metadata and metadata.get('sender'))
             verdict, phishing_prob, confidence, prediction = predict(
-                clean_text, model, tfidf, strict=is_eml
+                clean_text, model, tfidf, strict=(is_eml or pdf_has_sender)
             )
 
             auth_results = metadata.get('auth_results', '').lower() if metadata else ""
@@ -258,12 +269,20 @@ with col_output:
 
             if is_authenticated:
                 if is_trusted_sender:
-                    verdict = "LEGITIMATE"
-                    phishing_prob = 0.23
+                    # Trusted domain + SPF/DKIM pass: cap phishing_prob at 0.30 max.
+                    # The model score is preserved below that ceiling so a
+                    # legitimately worded email still scores better than a
+                    # borderline one — no two emails ever show the same number.
+                    phishing_prob = min(phishing_prob, 0.30)
+                    verdict       = "LEGITIMATE"
                 else:
-                    if phishing_prob > 0.50:
-                        phishing_prob -= 0.40
-                        verdict = "LEGITIMATE" if phishing_prob < 0.35 else "UNCERTAIN"
+                    # Authenticated but unknown domain: apply a gentler cap.
+                    # If the model already scored it as legit, leave it alone.
+                    # If it flagged as phishing, cap at 0.55 so it lands in
+                    # UNCERTAIN at worst — forces manual review, not auto-clear.
+                    if phishing_prob > 0.55:
+                        phishing_prob = 0.55
+                    verdict = "LEGITIMATE" if phishing_prob < 0.35 else "UNCERTAIN"
 
             if verdict == "UNCERTAIN" and len(metadata_warnings) >= 2:
                 verdict = "PHISHING"
@@ -303,6 +322,13 @@ with col_output:
         </div>
         """, unsafe_allow_html=True)
 
+        # PDF-specific notice in results
+        if is_pdf:
+            if metadata and metadata.get('sender'):
+                st.caption("📄 PDF scan — sender metadata extracted. SPF/DKIM checks unavailable.")
+            else:
+                st.caption("📄 PDF scan — no header metadata found. Result based on text content only.")
+        
         st.markdown("")
 
         with st.expander("Explanation", expanded=False):

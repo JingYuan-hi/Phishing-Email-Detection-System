@@ -103,7 +103,7 @@ with col_input:
 
     input_method = st.radio(
         "Input method:",
-        ["Paste text", "Upload .eml file"],
+        ["Paste text", "Upload file (.eml / .pdf)"],
         horizontal=True,
         label_visibility="collapsed"
     )

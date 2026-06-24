@@ -280,16 +280,9 @@ with col_output:
             if is_authenticated:
                 if is_trusted_sender:
                     # Trusted domain + SPF/DKIM pass: cap phishing_prob at 0.30 max.
-                    # The model score is preserved below that ceiling so a
-                    # legitimately worded email still scores better than a
-                    # borderline one — no two emails ever show the same number.
                     phishing_prob = min(phishing_prob, 0.30)
                     verdict       = "LEGITIMATE"
                 else:
-                    # Authenticated but unknown domain: apply a gentler cap.
-                    # If the model already scored it as legit, leave it alone.
-                    # If it flagged as phishing, cap at 0.55 so it lands in
-                    # UNCERTAIN at worst — forces manual review, not auto-clear.
                     if phishing_prob > 0.55:
                         phishing_prob = 0.55
                     verdict = "LEGITIMATE" if phishing_prob < 0.35 else "UNCERTAIN"
@@ -332,13 +325,6 @@ with col_output:
         </div>
         """, unsafe_allow_html=True)
 
-        # PDF-specific notice in results
-        if is_pdf:
-            if metadata and metadata.get('sender'):
-                st.caption("📄 PDF scan — sender metadata extracted. SPF/DKIM checks unavailable.")
-            else:
-                st.caption("📄 PDF scan — no header metadata found. Result based on text content only.")
-        
         st.markdown("")
 
         with st.expander("Explanation", expanded=False):

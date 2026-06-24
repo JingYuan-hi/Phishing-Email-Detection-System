@@ -163,18 +163,85 @@ def parse_eml(uploaded_file):
 
     return subject, body, combined_text, metadata
 
+def _extract_pdf_metadata(full_text: str) -> dict:
+    """
+    Extract sender, subject and date from Gmail/Outlook print-to-PDF text.
+ 
+    Gmail PDF structure (no field labels — purely positional):
+      non-empty line 0: Recipient <email>            (logged-in user — skip)
+      non-empty line 1: Subject
+      non-empty line 2: "1 message" or "X messages"
+      non-empty line 3: Sender Name <email>  DATE    (sender + date on same line)
+      non-empty line 4: To: recipient
+ 
+    Key insight: the sender line is identified by containing BOTH an email
+    address AND a date pattern on the same line — not by a "From:" label.
+    We fall back to positional matching if the date is on the next line.
+    """
+    metadata = {
+        'sender': '', 'reply_to': '', 'date': '',
+        'subject': '', 'return_path': '', 'x_mailer': '',
+        'message_id': '', 'auth_results': '',
+    }
+ 
+    lines     = [l.strip() for l in full_text.splitlines()]
+    non_empty = [l for l in lines if l]
+ 
+    EMAIL_RE   = re.compile(r'[\w\.\+\-]+@[\w\.\-]+\.\w+')
+    MSG_COUNT  = re.compile(r'^\d+\s+messages?$', re.IGNORECASE)
+    TO_RE      = re.compile(r'^To:\s*(.+)', re.IGNORECASE)
+    DATE_RE    = re.compile(
+        r'(\d{1,2}\s+\w+\s+\d{4}(?:\s+at\s+[\d:]+)?'    # 18 June 2026 at 07:04
+        r'|\w+\s+\d{1,2},?\s+\d{4}(?:\s+at\s+[\d:]+)?'  # April 7, 2026 at 13:02
+        r'|\d{1,2}/\d{1,2}/\d{2,4})',                    # 07/04/2026
+        re.IGNORECASE
+    )
+ 
+    for i, line in enumerate(non_empty[:15]):
+ 
+        # line 1 — Subject (no email, not a message-count line)
+        if i == 1 and not EMAIL_RE.search(line) and not MSG_COUNT.match(line):
+            metadata['subject'] = line
+ 
+        # Sender line — has an email AND a date on the same line
+        # e.g. "GitHub <noreply@github.com> 18 June 2026 at 07:04"
+        elif EMAIL_RE.search(line) and DATE_RE.search(line):
+            date_m = DATE_RE.search(line)
+            metadata['date']   = date_m.group(0).strip()
+            sender_part        = line[:date_m.start()].strip().rstrip(',').strip()
+            if sender_part:
+                metadata['sender'] = sender_part
+ 
+        # Fallback — email on its own line within first 6 lines (no date yet found)
+        # Skip line 0 (that's the recipient/logged-in user header)
+        elif i > 0 and i <= 5 and EMAIL_RE.search(line) and not metadata['sender']:
+            if not TO_RE.match(line) and not MSG_COUNT.match(line):
+                metadata['sender'] = line
+ 
+    return metadata
+ 
+ 
 def parse_pdf(uploaded_file):
     """
-    Extract plain text from a PDF file.
-    Returns the raw text to be processed by the ML model.
+    Extract plain text AND metadata from a PDF-printed email.
+ 
+    Returns:
+        email_text (str)  -- subject + full body for the ML model
+        metadata   (dict) -- sender, reply_to, date, subject, auth_results
     """
     reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
+    raw_pages = []
     for page in reader.pages:
         extracted = page.extract_text()
         if extracted:
-            text += extracted + " "
-    return text.strip()
+            raw_pages.append(extracted)
+    full_text = ' '.join(raw_pages).strip()
+ 
+    metadata   = _extract_pdf_metadata(full_text)
+    subject    = metadata.get('subject', '')
+    email_text = f'{subject} {full_text}'.strip() if subject else full_text
+ 
+    return email_text, metadata
 
 def extract_urls(text):
     """Extract raw URLs from original email text before cleaning."""

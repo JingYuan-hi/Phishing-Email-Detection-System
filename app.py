@@ -147,7 +147,17 @@ with col_input:
             if file_ext == 'pdf':
                 is_pdf = True
                 try:
-                    email_text, metadata = parse_pdf(uploaded)
+                    pdf_result = parse_pdf(uploaded)
+                    # Supports both old (str) and new (str, dict) return signatures
+                    if isinstance(pdf_result, tuple):
+                        email_text, metadata = pdf_result
+                    else:
+                        email_text = pdf_result
+                        metadata   = {
+                            'sender': '', 'reply_to': '', 'date': '',
+                            'subject': '', 'return_path': '', 'x_mailer': '',
+                            'message_id': '', 'auth_results': '',
+                        }
                     display_text = email_text
                     st.success(f"Loaded: {uploaded.name}")
  

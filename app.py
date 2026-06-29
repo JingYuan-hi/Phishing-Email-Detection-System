@@ -57,10 +57,9 @@ def show_guide():
     with tab2:
         st.markdown("""
         1. Open the email in Outlook
-        2. Go to **File → Save As**
-        3. Choose format: **Outlook Message Format**
-           or drag the email to your desktop to get a `.eml` file
-        4. Upload the file here
+        2. Go to **File → Download**
+        3. Choose format: **Download as EML**
+        4. Upload the downloaded `.eml` file here
         """)
     with tab3:
         st.markdown("""
